@@ -23,6 +23,25 @@ class PiperTTS:
         # PTT in that state would open your real game mic and leak your real
         # voice/room audio instead of (or alongside) the persona voice.
         self.cable_confirmed = cable_confirmed
+        self.is_playing = False
+        self.is_paused = False
+
+    def pause(self):
+        """Pause current audio playback."""
+        if self.is_playing:
+            self.is_paused = True
+
+    def resume(self):
+        """Resume paused audio playback."""
+        if self.is_playing:
+            self.is_paused = False
+
+    def toggle_pause(self) -> bool:
+        """Toggle current playback pause/resume state."""
+        if self.is_playing:
+            self.is_paused = not self.is_paused
+            return self.is_paused
+        return False
 
     def _press_ptt(self):
         if not self.in_game_ptt_key or not self.cable_confirmed:
@@ -58,6 +77,8 @@ class PiperTTS:
     def force_release_ptt(self):
         """Safety valve: call on cancel/shutdown in case a press ever got
         left holding the key down (crash mid-playback, etc.)."""
+        self.is_paused = False
+        self.is_playing = False
         self._release_ptt()
 
     def synthesize_and_play(self, text: str, stop_event=None, model_path: str = None, length_scale: float = 0.5) -> tuple[float, float]:
@@ -183,18 +204,37 @@ class PiperTTS:
                   "skipping auto PTT press to avoid leaking your real mic into the game.")
         self._press_ptt()
 
+        self.is_playing = True
+        self.is_paused = False
+
         try:
-            sd.play(resampled, samplerate=self.target_sr, device=self.output_device_id)
+            channels = resampled.shape[1] if resampled.ndim > 1 else 1
+            chunk_size = 2048
+            pos = 0
+            total_frames = len(resampled)
 
-            duration = len(resampled) / self.target_sr
-            end_time = time.time() + duration
+            with sd.OutputStream(samplerate=self.target_sr, device=self.output_device_id, channels=channels, dtype='float32') as stream:
+                while pos < total_frames:
+                    if stop_event and stop_event.is_set():
+                        break
 
-            while time.time() < end_time:
-                if stop_event and stop_event.is_set():
-                    sd.stop()
-                    break
-                time.sleep(0.01)
+                    if self.is_paused:
+                        self._release_ptt()
+                        while self.is_paused:
+                            if stop_event and stop_event.is_set():
+                                break
+                            time.sleep(0.01)
+                        if not (stop_event and stop_event.is_set()):
+                            self._press_ptt()
+                        else:
+                            break
+
+                    chunk = resampled[pos:pos + chunk_size]
+                    stream.write(np.ascontiguousarray(chunk, dtype=np.float32))
+                    pos += len(chunk)
         finally:
+            self.is_playing = False
+            self.is_paused = False
             self._release_ptt()
             print(f"[TTS] Auto-released PTT key: '{self.in_game_ptt_key}'")
 

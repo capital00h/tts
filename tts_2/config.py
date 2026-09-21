@@ -2,13 +2,13 @@ import json
 import os
 
 CONFIG_FILE = "config.json"
-
+#    "stt_model": "distil-medium.en",
 DEFAULT_CONFIG = {
     "input_device_id": None,
     "output_device_id": None,
     "ptt_key": "v",
     "in_game_ptt_key": "`",
-    "stt_model": "distil-medium.en",
+    "stt_model": "small",
     "stt_device": "cuda",
     "stt_compute_type": "float16",
     # FIX: Point directly to the female .onnx file

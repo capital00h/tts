@@ -1,5 +1,6 @@
 import os
 import sys
+import threading
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QComboBox, QPushButton, QProgressBar, QSystemTrayIcon, QMenu,
@@ -93,10 +94,20 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.soundboard_list)
 
         soundboard_btn_layout = QHBoxLayout()
+        self.play_sound_btn = QPushButton("Play")
+        self.play_sound_btn.clicked.connect(self.play_selected_soundboard_entry)
+
+        self.pause_sound_btn = QPushButton("Pause")
+        self.pause_sound_btn.clicked.connect(self.toggle_soundboard_pause)
+
         self.add_sound_btn = QPushButton("Add Sound...")
         self.add_sound_btn.clicked.connect(self.add_soundboard_entry)
+
         self.remove_sound_btn = QPushButton("Remove Selected")
         self.remove_sound_btn.clicked.connect(self.remove_soundboard_entry)
+
+        soundboard_btn_layout.addWidget(self.play_sound_btn)
+        soundboard_btn_layout.addWidget(self.pause_sound_btn)
         soundboard_btn_layout.addWidget(self.add_sound_btn)
         soundboard_btn_layout.addWidget(self.remove_sound_btn)
         layout.addLayout(soundboard_btn_layout)
@@ -136,14 +147,35 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
     # ------------------------------------------------------------------
-    # Soundboard - dynamic add/remove, persisted permanently via
-    # SoundboardManager (writes to soundboard.json on every change).
+    # Soundboard - dynamic add/remove/play/pause, persisted permanently
+    # via SoundboardManager (writes to soundboard.json on every change).
     # ------------------------------------------------------------------
 
     def _refresh_soundboard_list(self):
         self.soundboard_list.clear()
         for command, file_path in self.pipeline.soundboard.list_sounds().items():
             self.soundboard_list.addItem(f"{command}   →   {os.path.basename(file_path)}")
+
+    def play_selected_soundboard_entry(self):
+        item = self.soundboard_list.currentItem()
+        if not item:
+            return
+        command = item.text().split("   →   ")[0].strip()
+        file_path = self.pipeline.soundboard.sounds.get(command)
+        if file_path and os.path.isfile(file_path):
+            threading.Thread(
+                target=self.pipeline.tts.play_file,
+                args=(file_path,),
+                daemon=True
+            ).start()
+
+    def toggle_soundboard_pause(self):
+        if hasattr(self, 'pipeline') and hasattr(self.pipeline, 'tts'):
+            is_paused = self.pipeline.tts.toggle_pause()
+            if is_paused:
+                self.pause_sound_btn.setText("Resume")
+            else:
+                self.pause_sound_btn.setText("Pause")
 
     def add_soundboard_entry(self):
         file_path, _ = QFileDialog.getOpenFileName(
