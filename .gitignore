@@ -1,12 +1,24 @@
-# Ignore everything by default
+# 1. Ignore all files at the root level
 /*
 
-# Allow directories so Git can traverse subfolders
+# 2. Re-include all directories so Git can search inside subfolders
 !*/
 
-# Track all Python files and JSON files anywhere in the project
+# 3. Ignore all files inside all subdirectories
+*/**
+
+# 4. Re-include subdirectories
+!**/*/
+
+# 5. Re-include Python and JSON files
 !*.py
 !*.json
-
-# Allow .gitignore itself to be tracked
 !.gitignore
+
+# 6. EXPLICITLY IGNORE virtual environments and build caches
+venv/
+.venv/
+ENV/
+env/
+__pycache__/
+*.pyc
