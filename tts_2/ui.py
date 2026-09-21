@@ -3,7 +3,7 @@ import sys
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QComboBox, QPushButton, QProgressBar, QSystemTrayIcon, QMenu,
-    QMessageBox, QCheckBox
+    QMessageBox, QCheckBox, QListWidget, QFileDialog, QInputDialog
 )
 from PySide6.QtCore import Qt, Signal, QObject
 from PySide6.QtGui import QIcon, QAction
@@ -24,7 +24,7 @@ class MainWindow(QMainWindow):
         self.bridge = SignalBridge()
 
         self.setWindowTitle("Game Voice TTS - Virtual Microphone")
-        self.setFixedSize(450, 480)
+        self.setFixedSize(450, 640)
 
         self._build_ui()
         self._setup_tray()
@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         self.llm_enable_cb.toggled.connect(self.pipeline.llm.set_enabled)
         self.persona_combo.currentTextChanged.connect(self.pipeline.llm.set_persona)
 
+        self._refresh_soundboard_list()
         self.check_virtual_mic_status()
 
     def _build_ui(self):
@@ -83,6 +84,23 @@ class MainWindow(QMainWindow):
         persona_layout.addWidget(self.persona_combo)
         layout.addLayout(persona_layout)
 
+        # Soundboard Section (dynamic - add/remove clips at any time,
+        # saved permanently to soundboard.json). Say "/name" into the
+        # mic to trigger a clip instead of the LLM/TTS pipeline.
+        layout.addWidget(QLabel("Soundboard (say \"/name\" to trigger):"))
+        self.soundboard_list = QListWidget()
+        self.soundboard_list.setMaximumHeight(110)
+        layout.addWidget(self.soundboard_list)
+
+        soundboard_btn_layout = QHBoxLayout()
+        self.add_sound_btn = QPushButton("Add Sound...")
+        self.add_sound_btn.clicked.connect(self.add_soundboard_entry)
+        self.remove_sound_btn = QPushButton("Remove Selected")
+        self.remove_sound_btn.clicked.connect(self.remove_soundboard_entry)
+        soundboard_btn_layout.addWidget(self.add_sound_btn)
+        soundboard_btn_layout.addWidget(self.remove_sound_btn)
+        layout.addLayout(soundboard_btn_layout)
+
         # Status Display
         self.status_label = QLabel("READY")
         self.status_label.setAlignment(Qt.AlignCenter)
@@ -116,6 +134,44 @@ class MainWindow(QMainWindow):
 
         central.setLayout(layout)
         self.setCentralWidget(central)
+
+    # ------------------------------------------------------------------
+    # Soundboard - dynamic add/remove, persisted permanently via
+    # SoundboardManager (writes to soundboard.json on every change).
+    # ------------------------------------------------------------------
+
+    def _refresh_soundboard_list(self):
+        self.soundboard_list.clear()
+        for command, file_path in self.pipeline.soundboard.list_sounds().items():
+            self.soundboard_list.addItem(f"{command}   →   {os.path.basename(file_path)}")
+
+    def add_soundboard_entry(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Sound File", "", "WAV Audio (*.wav)"
+        )
+        if not file_path:
+            return
+
+        command, ok = QInputDialog.getText(
+            self, "Soundboard Trigger",
+            "Say this to trigger the clip (e.g. type '1' to trigger \"/1\"):"
+        )
+        if not ok or not command.strip():
+            return
+
+        try:
+            self.pipeline.soundboard.add_sound(command, file_path)
+            self._refresh_soundboard_list()
+        except (ValueError, FileNotFoundError) as e:
+            QMessageBox.warning(self, "Could Not Add Sound", str(e))
+
+    def remove_soundboard_entry(self):
+        item = self.soundboard_list.currentItem()
+        if not item:
+            return
+        command = item.text().split("   →   ")[0].strip()
+        self.pipeline.soundboard.remove_sound(command)
+        self._refresh_soundboard_list()
 
     def check_virtual_mic_status(self):
         v_idx, _, _ = AudioRouter.find_virtual_cable()

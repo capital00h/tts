@@ -17,6 +17,7 @@ DEFAULT_CONFIG = {
     "max_recording_sec": 10,
     "sample_rate": 16000,
     "queue_mode": "INTERRUPT",
+    "soundboard_file": "soundboard.json",
 }
 
 def load_config() -> dict:

@@ -1,6 +1,7 @@
 import time
 import subprocess
 import os
+import wave
 import numpy as np
 import sounddevice as sd
 from pynput.keyboard import Controller, Key
@@ -109,8 +110,66 @@ class PiperTTS:
         audio_int16 = np.frombuffer(raw_bytes, dtype=np.int16)
         audio_float = audio_int16.astype(np.float32) / 32768.0
 
-        # Resample from 22050 Hz default output to target sample rate
-        resampled = AudioRouter.resample(audio_float, 22050, self.target_sr)
+        play_ms = self._route_and_play(audio_float, orig_sr=22050, stop_event=stop_event)
+        return synth_ms, play_ms
+
+    # ------------------------------------------------------------------
+    # Soundboard playback (bypasses piper entirely — plays a pre-recorded
+    # clip through the exact same virtual-cable + PTT routing as TTS).
+    # ------------------------------------------------------------------
+
+    def play_file(self, file_path: str, stop_event=None) -> float:
+        """
+        Play a local audio clip (soundboard trigger) through the same
+        output device as synthesized speech, auto-pressing the in-game
+        PTT key exactly like synthesize_and_play() does. Returns the
+        playback duration in ms (0.0 on failure).
+        """
+        if not file_path or not os.path.isfile(file_path):
+            print(f"[Soundboard] Audio file not found: {file_path}")
+            return 0.0
+
+        try:
+            audio_float, orig_sr = self._load_wav(file_path)
+        except Exception as e:
+            print(f"[Soundboard Error] Failed to read '{file_path}': {e}")
+            return 0.0
+
+        if audio_float is None or len(audio_float) == 0:
+            return 0.0
+
+        return self._route_and_play(audio_float, orig_sr=orig_sr, stop_event=stop_event)
+
+    @staticmethod
+    def _load_wav(file_path: str) -> tuple[np.ndarray, int]:
+        """Reads a 16-bit PCM .wav file (mono or stereo) into a mono float32
+        array in [-1, 1]. Soundboard clips should be .wav files."""
+        with wave.open(file_path, "rb") as wf:
+            sr = wf.getframerate()
+            n_channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            frames = wf.readframes(wf.getnframes())
+
+        if sampwidth != 2:
+            raise ValueError(
+                f"Only 16-bit PCM .wav files are supported (got {sampwidth * 8}-bit)."
+            )
+
+        audio_int16 = np.frombuffer(frames, dtype=np.int16)
+        if n_channels > 1:
+            audio_int16 = audio_int16.reshape(-1, n_channels).mean(axis=1)
+
+        audio_float = audio_int16.astype(np.float32) / 32768.0
+        return audio_float, sr
+
+    # ------------------------------------------------------------------
+    # Shared routing/playback + PTT auto-press, used by both synthesized
+    # speech and soundboard clips so behavior (and the mic-leak safety
+    # gating) stays identical between the two.
+    # ------------------------------------------------------------------
+
+    def _route_and_play(self, audio_float: np.ndarray, orig_sr: int, stop_event=None) -> float:
+        resampled = AudioRouter.resample(audio_float, orig_sr, self.target_sr)
 
         if self.target_channels > 1:
             resampled = np.column_stack([resampled] * self.target_channels)
@@ -140,4 +199,4 @@ class PiperTTS:
             print(f"[TTS] Auto-released PTT key: '{self.in_game_ptt_key}'")
 
         play_ms = (time.perf_counter() - t_play_start) * 1000
-        return synth_ms, play_ms
+        return play_ms

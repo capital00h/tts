@@ -9,6 +9,7 @@ from stt_engine import WhisperSTT
 from tts_engine import PiperTTS
 from text_processor import TextProcessor
 from llm_engine import LLMPersonaEngine, PERSONA_CONFIGS
+from soundboard import SoundboardManager
 
 
 class VoicePipelineController:
@@ -34,6 +35,11 @@ class VoicePipelineController:
             persona=config.get("persona", "Pirate"),
             provider=config.get("llm_provider", "ollama")
         )
+
+        # Dynamic, disk-persisted soundboard: say "/1" (etc.) over the mic
+        # to play a clip instead of going through the LLM/TTS pipeline.
+        # Sounds can be added/removed at runtime via self.soundboard.
+        self.soundboard = SoundboardManager(path=config.get("soundboard_file", "soundboard.json"))
         
         v_idx, target_sr, target_ch = AudioRouter.find_virtual_cable()
         configured_output = config.get("output_device_id")
@@ -162,6 +168,24 @@ class VoicePipelineController:
 
             if raw_text and not self.stop_current_playback.is_set():
                 print(f"[Raw Input]: \"{raw_text}\"")
+
+                # 1b. Soundboard command check — if the whole utterance is a
+                # recognized "/command", play that clip directly (same
+                # virtual-cable routing + auto-PTT as TTS) and skip the
+                # LLM/TTS pipeline entirely for this utterance.
+                sound_file = self.soundboard.match(raw_text)
+                if sound_file:
+                    print(f"[Soundboard] Match: \"{raw_text}\" -> {sound_file}")
+                    self._update_status("SPEAKING")
+                    play_ms = self.tts.play_file(sound_file, stop_event=self.stop_current_playback)
+
+                    if self.metric_cb:
+                        self.metric_cb(stt_ms, play_ms, stt_ms + play_ms)
+
+                    self.is_speaking = False
+                    self._update_status("READY")
+                    self.task_queue.task_done()
+                    continue
 
                 # 2. LLM Persona Transformation
                 character_text, llm_ms = self.llm.transform(raw_text)
