@@ -1,0 +1,12 @@
+# Ignore everything by default
+/*
+
+# Allow directories so Git can traverse subfolders
+!*/
+
+# Track all Python files and JSON files anywhere in the project
+!*.py
+!*.json
+
+# Allow .gitignore itself to be tracked
+!.gitignore
