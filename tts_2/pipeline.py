@@ -44,12 +44,6 @@ class VoicePipelineController:
         v_idx, target_sr, target_ch = AudioRouter.find_virtual_cable()
         configured_output = config.get("output_device_id")
 
-        # Only trust a device (and therefore only auto-press the in-game PTT
-        # key) once we've actually confirmed it's a real, valid output
-        # device. `... or v_idx` used to silently discard a configured
-        # device index of 0, and silently fell through to None (system
-        # default speakers) if no virtual cable was found — which then
-        # still auto-pressed PTT and leaked the real mic. Both are fixed here.
         if configured_output is not None and AudioRouter.is_valid_output_device(configured_output):
             output_dev = configured_output
             routing_confirmed = True
@@ -169,18 +163,20 @@ class VoicePipelineController:
             if raw_text and not self.stop_current_playback.is_set():
                 print(f"[Raw Input]: \"{raw_text}\"")
 
-                # 1b. Soundboard command check — if the whole utterance is a
-                # recognized "/command", play that clip directly (same
-                # virtual-cable routing + auto-PTT as TTS) and skip the
-                # LLM/TTS pipeline entirely for this utterance.
-                sound_file = self.soundboard.match(raw_text)
-                if sound_file:
-                    print(f"[Soundboard] Match: \"{raw_text}\" -> {sound_file}")
-                    self._update_status("SPEAKING")
-                    play_ms = self.tts.play_file(sound_file, stop_event=self.stop_current_playback)
+                # 1b. Soundboard command check — if the utterance starts with '/' or 'slash',
+                # attempt to match and play a sound file. If unrecognized, suppress it 
+                # immediately so it never triggers LLM or TTS speech.
+                if self.soundboard.is_slash_command(raw_text):
+                    sound_file = self.soundboard.match(raw_text)
+                    if sound_file:
+                        print(f"[Soundboard] Match: \"{raw_text}\" -> {sound_file}")
+                        self._update_status("SPEAKING")
+                        play_ms = self.tts.play_file(sound_file, stop_event=self.stop_current_playback)
 
-                    if self.metric_cb:
-                        self.metric_cb(stt_ms, play_ms, stt_ms + play_ms)
+                        if self.metric_cb:
+                            self.metric_cb(stt_ms, play_ms, stt_ms + play_ms)
+                    else:
+                        print(f"[Soundboard] Unrecognized command suppressed: \"{raw_text}\"")
 
                     self.is_speaking = False
                     self._update_status("READY")
@@ -193,6 +189,7 @@ class VoicePipelineController:
 
                 # 3. Text Cleanup
                 processed_text = TextProcessor.process(character_text, mode=self.config.get("text_process_mode", "CLEANUP"))
+                
                 # 4. Fetch Active Persona's Voice Model & Speed (Only if LLM is enabled)
                 if self.llm.enabled:
                     persona_cfg = PERSONA_CONFIGS.get(self.llm.persona, {})

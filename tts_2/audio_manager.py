@@ -22,7 +22,18 @@ class AudioRouter:
             if ("cable input" in name or "vb-audio" in name or "virtual cable" in name) and dev['max_output_channels'] > 0:
                 return idx, int(dev['default_samplerate']), int(dev['max_output_channels'])
         return None, 48000, 2
-
+    # @staticmethod
+    # def find_virtual_cable() -> tuple[int | None, int, int]:
+    #     """Finds headphones/default playback device for testing."""
+    #     default_out_idx = sd.default.device[1]  # System default output
+        
+    #     for idx, dev in enumerate(sd.query_devices()):
+    #         name = dev['name'].lower()
+    #         # Look for typical headphone keywords or fallback to default output
+    #         if ("headphone" in name or "headset" in name or idx == default_out_idx) and dev['max_output_channels'] > 0:
+    #             return idx, int(dev['default_samplerate']), int(dev['max_output_channels'])
+                
+    #     return None, 48000, 2
     @staticmethod
     def is_valid_output_device(device_id) -> bool:
         """Confirms a device index exists and actually accepts output, before

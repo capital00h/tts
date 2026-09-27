@@ -2,17 +2,26 @@ import json
 import os
 
 CONFIG_FILE = "config.json"
-#    "stt_model": "distil-medium.en",
+#"tts_model_path": r"E:\tts\tts_2\models\en_US-hfc_female-medium.onnx",
 DEFAULT_CONFIG = {
     "input_device_id": None,
     "output_device_id": None,
     "ptt_key": "v",
     "in_game_ptt_key": "`",
-    "stt_model": "small",
+    
+    # --- STT ACCENT & PERFORMANCE OPTIMIZATIONS ---
+    # "distil-large-v3" gives large-model accuracy at under 1.5GB VRAM
+    "stt_model": "distil-large-v3", 
     "stt_device": "cuda",
-    "stt_compute_type": "float16",
-    # FIX: Point directly to the female .onnx file
-    "tts_model_path": r"E:\tts\tts_2\models\en_US-hfc_female-medium.onnx",
+    
+    # "int8_float16" halves VRAM usage with zero noticeable loss in quality
+    "stt_compute_type": "int8_float16", 
+    
+    # Give Whisper contextual hints for voice commands & accents
+    "stt_initial_prompt": "Indian English accent, voice commands: slash, blade theme, play soundboard.",
+    
+    # --- TTS & AUDIO SETTINGS ---
+    "tts_model_path": r"E:\tts\tts_2\models\ru_RU-irina-medium.onnx",
     "text_process_mode": "CLEANUP",
     "max_recording_sec": 10,
     "sample_rate": 16000,

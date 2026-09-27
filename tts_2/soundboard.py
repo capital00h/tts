@@ -83,6 +83,18 @@ class SoundboardManager:
     # Matching against transcribed speech
     # ------------------------------------------------------------------
 
+    def is_slash_command(self, text: str) -> bool:
+        """
+        Returns True if the utterance starts with '/' or 'slash',
+        indicating an attempted soundboard command.
+        """
+        if not text:
+            return False
+        cleaned = text.strip().lower()
+        cleaned = re.sub(r"[.,!?;:]", "", cleaned).strip()
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned.startswith("/") or cleaned.startswith("slash")
+
     # Below this fuzzy-match ratio (0-1) a garbled "slash ..." utterance is
     # treated as not matching any known command, rather than guessing.
     FUZZY_THRESHOLD = 0.72
@@ -91,16 +103,6 @@ class SoundboardManager:
         """
         Check STT output for a soundboard trigger. Returns the audio file
         path if the (whole) utterance is a recognized command, else None.
-
-        Handles realistic Whisper transcription quirks:
-          - literal "/1" or "/blade theme" (multi-word commands supported)
-          - stray spaces around the slash: "/ 1"
-          - stray punctuation Whisper likes to sprinkle in: "/blade. theme."
-          - the spoken-out form "slash 1" / "slash blade theme"
-          - mis-heard words ("slash blade key" for "/blade theme") via a
-            fuzzy fallback — but ONLY once the utterance already looks like
-            a command attempt (starts with "/" or "slash"), so ordinary
-            chat can never accidentally fire a sound.
         """
         if not text or not self.sounds:
             return None
@@ -122,8 +124,11 @@ class SoundboardManager:
             candidates.append(f"/{cleaned[len('slash'):].strip()}")
 
         if not candidates:
-            # Doesn't even look like a command attempt - never hijack
-            # normal speech.
+            return None
+
+        # Ignore standalone slash/empty candidates
+        candidates = [c for c in candidates if c not in ("/", "")]
+        if not candidates:
             return None
 
         for candidate in candidates:
@@ -132,6 +137,9 @@ class SoundboardManager:
 
         # Fuzzy fallback for STT mishearings within an attempted command.
         spoken = candidates[0].lstrip("/")
+        if not spoken.strip():
+            return None
+
         best_cmd, best_ratio = None, 0.0
         for cmd in self.sounds:
             ratio = difflib.SequenceMatcher(None, spoken, cmd.lstrip("/")).ratio()
