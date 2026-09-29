@@ -3,6 +3,7 @@ import os
 
 CONFIG_FILE = "config.json"
 #"tts_model_path": r"E:\tts\tts_2\models\en_US-hfc_female-medium.onnx",
+#"tts_model_path": r"E:\tts\tts_2\models\ru_RU-irina-medium.onnx",
 DEFAULT_CONFIG = {
     "input_device_id": None,
     "output_device_id": None,
@@ -21,7 +22,7 @@ DEFAULT_CONFIG = {
     "stt_initial_prompt": "Indian English accent, voice commands: slash, blade theme, play soundboard.",
     
     # --- TTS & AUDIO SETTINGS ---
-    "tts_model_path": r"E:\tts\tts_2\models\ru_RU-irina-medium.onnx",
+    "tts_model_path": r"E:\tts\tts_2\models\en_US-hfc_female-medium.onnx",
     "text_process_mode": "CLEANUP",
     "max_recording_sec": 10,
     "sample_rate": 16000,
