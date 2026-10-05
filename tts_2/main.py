@@ -11,11 +11,11 @@ from PySide6.QtCore import QObject, Signal, Slot, Property, QUrl
 from PySide6.QtGui import QIcon, QAction
 
 from audio_manager import AudioRouter
-from config import load_config
+from config import load_config, save_config
 from pipeline import VoicePipelineController
 from llm_engine import PERSONA_PROMPTS
 
-ICON_PATH = r"E:\tts\tts_2\soundboard.ico"
+ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "soundboard.ico")
 
 
 class BackendBridge(QObject):
@@ -86,14 +86,32 @@ class BackendBridge(QObject):
 
     @Property(int, constant=True)
     def defaultVirtualCableIndex(self):
-        for idx, (_, name) in enumerate(self._outputs):
-            if self._outputs[idx][0] == self._v_idx:
+        configured = self.config.get("output_device_id")
+        target = configured if AudioRouter.is_valid_output_device(configured) else self._v_idx
+        for idx, (dev_id, _) in enumerate(self._outputs):
+            if dev_id == target:
+                return idx
+        return 0
+
+    @Property(int, constant=True)
+    def defaultInputDeviceIndex(self):
+        configured = self.config.get("input_device_id")
+        for idx, (dev_id, _) in enumerate(self._inputs):
+            if dev_id == configured:
                 return idx
         return 0
 
     @Property(list, constant=True)
     def personas(self):
         return list(PERSONA_PROMPTS.keys())
+
+    @Property(str, constant=True)
+    def currentPersona(self):
+        return self.pipeline.llm.persona
+
+    @Property(bool, constant=True)
+    def llmEnabled(self):
+        return self.pipeline.llm.enabled
 
     @Property(list, notify=soundboardUpdated)
     def soundboardItems(self):
@@ -106,10 +124,32 @@ class BackendBridge(QObject):
     @Slot(bool)
     def setLlmEnabled(self, enabled: bool):
         self.pipeline.llm.set_enabled(enabled)
+        self.config["use_llm_persona"] = enabled
+        save_config(self.config)
 
     @Slot(str)
     def setPersona(self, persona_name: str):
         self.pipeline.llm.set_persona(persona_name)
+        self.config["persona"] = persona_name
+        save_config(self.config)
+
+    @Slot(int)
+    def setInputDevice(self, index: int):
+        if 0 <= index < len(self._inputs):
+            device_id = self._inputs[index][0]
+            self.config["input_device_id"] = device_id
+            save_config(self.config)
+            self.stop_audio_stream()
+            self.start_audio_stream()
+
+    @Slot(int)
+    def setOutputDevice(self, index: int):
+        if 0 <= index < len(self._outputs):
+            device_id = self._outputs[index][0]
+            self.config["output_device_id"] = device_id
+            save_config(self.config)
+            self.pipeline.tts.output_device_id = device_id
+            self.pipeline.tts.cable_confirmed = AudioRouter.is_valid_output_device(device_id)
 
     @Slot(int)
     def playSoundboardIndex(self, index: int):
